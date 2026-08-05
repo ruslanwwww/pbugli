@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Уголь — таймеры Par BAR</title>
+<meta name="theme-color" content="#0A0C0E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Уголь">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#0A0C0E; --surface:#14181C; --surface-2:#1B2127; --line:#232A31;
+  --text:#E8EDF2; --muted:#7C8894;
+  --cool:#4FB3C4; --warm:#E8A33D; --hot:#FF4D2E; --hot-deep:#C42D14;
+  --pad:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:16px;line-height:1.35;
+  padding:0 var(--pad) calc(104px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:contain;
+}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+
+header{
+  position:sticky;top:0;z-index:30;
+  margin:0 calc(var(--pad) * -1);
+  padding:calc(10px + env(safe-area-inset-top)) var(--pad) 10px;
+  background:rgba(10,12,14,.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;
+}
+.brand{font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px}
+.brand span{color:var(--hot)}
+.count{margin-left:auto;font-size:12px;color:var(--muted);letter-spacing:.06em}
+.count b{color:var(--text);font-weight:700}
+.iconbtn{
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  height:36px;min-width:36px;padding:0 9px;border-radius:10px;font-size:14px;line-height:1;cursor:pointer;
+}
+.iconbtn:active{background:var(--surface-2)}
+#soundBadge.off{border-color:var(--hot);color:var(--hot)}
+#soundBadge.on{border-color:#2E5A4A;color:#5FD0A6}
+
+#settings{
+  display:none;gap:12px;flex-wrap:wrap;align-items:center;
+  border:1px solid var(--line);background:var(--surface);
+  border-radius:12px;padding:12px;margin-top:12px;font-size:13px;color:var(--muted);
+}
+#settings.open{display:flex}
+#settings label{display:flex;align-items:center;gap:8px}
+#settings input,#settings select{
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+  border-radius:8px;padding:7px 8px;font-size:15px;
+  font-family:ui-monospace,Menlo,monospace;
+}
+#settings input{width:64px;text-align:center}
+.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
+.ghost:active{color:var(--text)}
+
+h2{
+  font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;margin:22px 0 10px;display:flex;align-items:center;gap:10px;
+}
+h2::after{content:"";flex:1;height:1px;background:var(--line)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:560px){.grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:820px){.grid{grid-template-columns:repeat(4,1fr)}}
+
+.card{
+  position:relative;overflow:hidden;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:12px 12px 12px 18px;
+  display:flex;flex-direction:column;gap:9px;
+  transition:border-color .25s,background .25s;
+}
+.card .fuel{position:absolute;left:0;bottom:0;width:5px;height:0%;background:var(--cool);transition:height .9s linear,background .9s linear}
+.card .name{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.card .time{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.card .state{font-size:12px;color:var(--muted);min-height:15px}
+
+.card.running{border-color:#2E4650}
+.card.running .time{color:var(--cool)}
+.card.warm{border-color:#5A431B;background:#191712}
+.card.warm .time{color:var(--warm)}
+.card.warm .fuel{background:var(--warm)}
+
+/* ПОСЛЕДНИЕ 30 СЕКУНД И ПРОСРОЧКА — карточка целиком красная и мигает */
+.card.hot,.card.done{
+  border-color:#FF7A63;color:#fff;
+  box-shadow:0 0 0 2px rgba(255,77,46,.45), 0 10px 34px rgba(255,60,30,.45);
+  animation:flash 1s steps(1,end) infinite;
+}
+.card.hot .name,.card.done .name,
+.card.hot .state,.card.done .state,
+.card.hot .time,.card.done .time{color:#fff}
+.card.hot .state,.card.done .state{opacity:.92;font-weight:700}
+.card.hot .fuel,.card.done .fuel{background:#fff;opacity:.5}
+.card.done .fuel{height:100%!important}
+.card.hot .btn.alarm,.card.done .btn.alarm{background:#fff;color:#8A1F0C}
+@keyframes flash{0%,100%{background:var(--hot)}50%{background:var(--hot-deep)}}
+.card.jump{outline:3px solid #fff;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){
+  .card.hot,.card.done{animation:none;background:var(--hot)}
+}
+
+.btn{
+  position:relative;z-index:1;border:none;border-radius:10px;padding:13px 10px;
+  font-size:14px;font-weight:700;letter-spacing:.04em;
+  background:var(--surface-2);color:var(--text);cursor:pointer;width:100%;
+}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--cool);color:#06181C}
+.btn.alarm{background:var(--hot);color:#fff}
+.row{display:flex;gap:6px}
+.row .btn{padding:9px 8px;font-size:12px;font-weight:600;color:var(--muted);background:transparent;border:1px solid var(--line)}
+.card.hot .row .btn,.card.done .row .btn{color:#fff;border-color:rgba(255,255,255,.45)}
+
+#alert{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;align-items:center;gap:12px;
+  padding:14px var(--pad) calc(14px + env(safe-area-inset-bottom));
+  background:var(--hot);color:#fff;box-shadow:0 -14px 40px rgba(255,77,46,.4);
+}
+#alert.on{display:flex}
+#alert .txt{font-weight:800;font-size:15px;letter-spacing:.02em;line-height:1.25;cursor:pointer}
+#alert .txt small{display:block;font-weight:500;opacity:.85;font-size:12px;letter-spacing:0}
+#alert button{margin-left:auto;flex:none;background:#fff;color:#8A1F0C;border:none;border-radius:10px;padding:13px 18px;font-size:14px;font-weight:800;cursor:pointer}
+
+#unlock{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:var(--bg);padding:32px;text-align:center}
+#unlock.hidden{display:none}
+#unlock h1{font-size:22px;margin:0;font-weight:800;letter-spacing:-.01em}
+#unlock p{color:var(--muted);font-size:14px;max-width:330px;margin:0}
+#unlock button{background:var(--hot);color:#fff;border:none;border-radius:14px;padding:18px 34px;font-size:17px;font-weight:800;cursor:pointer}
+#frameWarn{
+  display:none;margin-top:12px;padding:12px 14px;border-radius:12px;
+  background:#3A1A10;border:1px solid var(--hot);color:#FFD3C8;font-size:13px;line-height:1.45;
+}
+#frameWarn.show{display:block}
+#diagBox{
+  display:none;width:100%;margin:0;padding:10px;border-radius:8px;
+  background:#0D1114;border:1px solid var(--line);color:#9FB0BD;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;white-space:pre-wrap;
+}
+footer{color:#4A545E;font-size:11px;text-align:center;margin-top:26px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div id="unlock">
+  <h1>Таймеры угля</h1>
+  <p>Нажми — сразу услышишь короткий сигнал. Если тишина, значит телефон не дал звук: проверь беззвучный режим и громкость.</p>
+  <button id="unlockBtn">Включить звук</button>
+</div>
+
+<header>
+  <div class="brand">Par<span>·</span>Уголь</div>
+  <div class="count">активно <b id="activeCount">0</b></div>
+  <button class="iconbtn off" id="soundBadge">Звук выкл</button>
+  <button class="iconbtn" id="gear" aria-label="Настройки">⚙</button>
+</header>
+
+<div id="settings">
+  <label>Таймер <input id="durMin" type="number" min="1" max="120" step="1"> мин</label>
+  <label>Сигнал за <input id="preSec" type="number" min="5" max="300" step="5"> сек</label>
+  <label>Сигнал
+    <select id="soundPick">
+      <option value="beep">Гудки</option>
+      <option value="siren">Сирена</option>
+      <option value="bell">Звонок</option>
+    </select>
+  </label>
+  <button class="ghost" id="testSound">Проверить звук</button>
+  <button class="ghost" id="stopAll">Сбросить все</button>
+  <button class="ghost" id="diagBtn">Диагностика звука</button>
+  <pre id="diagBox"></pre>
+</div>
+
+<div id="frameWarn">Страница открыта внутри другого окна — там звук почти всегда заблокирован.
+Открой её в обычной вкладке браузера или по ссылке с GitHub Pages.</div>
+
+<h2>Столы</h2>
+<div class="grid" id="tables"></div>
+
+<h2>Кабины</h2>
+<div class="grid" id="cabins"></div>
+
+<footer>Таймеры живут по часам телефона — можно свернуть, закрыть и открыть заново.<br>Par BAR</footer>
+
+<div id="alert">
+  <div class="txt" id="alertJump"><span id="alertText">Пора менять уголь</span><small>Нажми на текст — подсветит точку</small></div>
+  <button id="alertOff">Отключить</button>
+</div>
+
+<script>
+"use strict";
+
+/* ======================= СПИСОК ТОЧЕК ======================= */
+/* Правь прямо здесь. Можно любые названия: "12", "VIP", "Терраса". */
+const TABLES = ["0","1","2","3","4","5","6","7","8","9","10","11","12"];
+const CABINS = ["1","2","3","4","5","6","7","8"];
+const DEFAULTS = { durMin: 20, preSec: 30, sound: "beep" };
+
+/* ======================= ХРАНИЛИЩЕ ======================= */
+const KEY = "parbar_coal_v3";
+let store = { cfg: { ...DEFAULTS }, timers: {} };
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){ const p = JSON.parse(raw);
+      store.cfg = Object.assign({}, DEFAULTS, p.cfg || {});
+      store.timers = p.timers || {};
+    }
+  }catch(e){}
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){} }
+
+/* ======================= ГЕНЕРАЦИЯ ЗВУКА ======================= */
+const RATE = 44100;
+function wavBytes(a, rate){
+  const buf = new ArrayBuffer(44 + a.length*2), v = new DataView(buf);
+  const str=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  str(0,"RIFF"); v.setUint32(4,36+a.length*2,true); str(8,"WAVE"); str(12,"fmt ");
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+  str(36,"data"); v.setUint32(40,a.length*2,true);
+  for(let i=0;i<a.length;i++) v.setInt16(44+i*2, Math.max(-1,Math.min(1,a[i]))*32767, true);
+  return buf;
+}
+function wavURL(a, rate){ return URL.createObjectURL(new Blob([wavBytes(a,rate)],{type:"audio/wav"})); }
+function makeBeep(){            // три коротких гудка, петля 2 c
+  const a = new Float32Array(RATE*2);
+  for(const [s,e] of [[0,.16],[.24,.40],[.48,.64]]){
+    const i0=Math.floor(s*RATE), i1=Math.floor(e*RATE), len=(i1-i0)/RATE;
+    for(let i=i0;i<i1;i++){ const t=(i-i0)/RATE;
+      const env=Math.min(1,t/.012)*Math.min(1,(len-t)/.03);
+      a[i]=.6*env*(Math.sin(2*Math.PI*950*t)+.4*Math.sin(2*Math.PI*1900*t))/1.4;
+    }
+  }
+  return a;
+}
+function makeSiren(){           // качающийся тон, петля 2 c
+  const a = new Float32Array(RATE*2); let ph=0;
+  for(let i=0;i<a.length;i++){
+    const t=i/RATE;
+    const f=760+340*Math.sin(2*Math.PI*t/1.0);
+    ph+=2*Math.PI*f/RATE;
+    const env=t<1.7?Math.min(1,t/.05):Math.max(0,(2-t)/.3);
+    a[i]=.55*env*(Math.sin(ph)+.25*Math.sin(2*ph))/1.25;
+  }
+  return a;
+}
+function makeBell(){            // два удара с затуханием, петля 2 c
+  const a = new Float32Array(RATE*2);
+  for(const s of [0,1.0]){
+    const i0=Math.floor(s*RATE), n=Math.floor(.95*RATE);
+    for(let i=0;i<n;i++){ const t=i/RATE, env=Math.exp(-t*4.5);
+      a[i0+i]+=.6*env*(Math.sin(2*Math.PI*1050*t)+.6*Math.sin(2*Math.PI*1575*t)+.3*Math.sin(2*Math.PI*2650*t))/1.9;
+    }
+  }
+  return a;
+}
+function makeSilence(){         // почти-тишина, чтобы система не усыпляла звук
+  const a = new Float32Array(RATE);
+  for(let i=0;i<a.length;i++) a[i]=(i%2?1:-1)*0.00015;
+  return a;
+}
+
+/* ---- две независимые ссылки на один и тот же WAV ----
+   blob: иногда режется политикой безопасности встроенных окон,
+   data: иногда работает там, где blob: запрещён. Пробуем обе. */
+function wavData(a, rate){
+  const buf = wavBytes(a, rate);
+  let s = ""; const u8 = new Uint8Array(buf);
+  for(let i=0;i<u8.length;i+=8192) s += String.fromCharCode.apply(null, u8.subarray(i,i+8192));
+  return "data:audio/wav;base64," + btoa(s);
+}
+
+let soundURLs = {}, soundData = {}, beepEl = null, keepEl = null;
+let diag = { blob:"?", data:"?", play:"не пробовали", advance:"?", err:"" };
+try{
+  const packs = { beep: makeBeep(), siren: makeSiren(), bell: makeBell() };
+  try{
+    for(const k in packs) soundURLs[k] = wavURL(packs[k], RATE);
+    diag.blob = "ок";
+  }catch(e){ diag.blob = "ошибка: " + (e && e.name); }
+  try{
+    for(const k in packs) soundData[k] = wavData(packs[k], RATE);
+    diag.data = "ок";
+  }catch(e){ diag.data = "ошибка: " + (e && e.name); }
+
+  beepEl = new Audio(); beepEl.loop = true; beepEl.preload = "auto";
+  const sil = makeSilence();
+  keepEl = new Audio(); keepEl.loop = true; keepEl.volume = .02; keepEl.preload = "auto";
+  try{ keepEl.src = wavURL(sil, RATE); }catch(e){ try{ keepEl.src = wavData(sil, RATE); }catch(e2){} }
+}catch(e){ diag.err = String(e && e.message); }
+
+let usingData = false;
+function srcFor(name){
+  const k = store.cfg.sound;
+  return (usingData ? soundData[k] : soundURLs[k]) || soundData[k] || soundURLs[k] || "";
+}
+function applySound(){ if(beepEl){ const s = srcFor(); if(s) beepEl.src = s; } }
+
+/* ---- Web Audio: не зависит ни от blob:, ни от файлов вообще ---- */
+let ctx = null, waTimer = null;
+function waTone(){
+  if(!ctx || ctx.state !== "running") return;
+  const now = ctx.currentTime, kind = store.cfg.sound;
+  if(kind === "siren"){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sawtooth"; o.frequency.setValueAtTime(560, now);
+    o.frequency.linearRampToValueAtTime(1150, now+.5);
+    o.frequency.linearRampToValueAtTime(560, now+1.0);
+    g.gain.setValueAtTime(.0001, now);
+    g.gain.exponentialRampToValueAtTime(.4, now+.05);
+    g.gain.setValueAtTime(.4, now+.9);
+    g.gain.exponentialRampToValueAtTime(.0001, now+1.1);
+    o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now+1.15);
+    return;
+  }
+  const offs = kind === "bell" ? [0,1.0] : [0,.24,.48];
+  for(const off of offs){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = kind === "bell" ? "triangle" : "square";
+    o.frequency.value = kind === "bell" ? 1050 : 950;
+    const len = kind === "bell" ? .8 : .16;
+    g.gain.setValueAtTime(.0001, now+off);
+    g.gain.exponentialRampToValueAtTime(.4, now+off+.012);
+    g.gain.exponentialRampToValueAtTime(.0001, now+off+len);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(now+off); o.stop(now+off+len+.02);
+  }
+}
+function waStart(){ if(!ctx || ctx.state !== "running" || waTimer) return; waTone(); waTimer = setInterval(waTone, 2000); }
+function waStop(){ if(waTimer){ clearInterval(waTimer); waTimer = null; } }
+
+/* ---- разблокировка: НИКАКИХ await до вызовов play() ----
+   Safari даёт разрешение только тем play(), что вызваны прямо в обработчике касания. */
+let audioReady = false;      // <audio> реально играет (проверено по currentTime)
+function verifyPlaying(el, label){
+  const t0 = el.currentTime;
+  setTimeout(()=>{
+    const moved = !el.paused && el.currentTime > t0;
+    diag.advance = moved ? "звук идёт" : "молчит (сброшено системой)";
+    audioReady = moved;
+    if(!moved && !usingData && soundData[store.cfg.sound]){
+      usingData = true; applySound();          // вторая попытка через data:
+      const p2 = el.play(); if(p2 && p2.catch) p2.catch(()=>{});
+      setTimeout(()=>{ audioReady = !el.paused && el.currentTime > 0; badge(); }, 400);
+    }
+    badge();
+  }, 450);
+}
+function unlockAudio(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(AC){ ctx = ctx || new AC(); if(ctx.state !== "running") ctx.resume().then(badge).catch(()=>{}); }
+  }catch(e){ diag.err = "AudioContext: " + (e && e.name); }
+
+  if(keepEl) keepEl.play().catch(()=>{});
+
+  if(beepEl){
+    applySound();
+    let p;
+    try{ p = beepEl.play(); }catch(e){ diag.play = "исключение: " + (e && e.name); }
+    if(p && p.then){
+      p.then(()=>{ diag.play = "разрешён"; verifyPlaying(beepEl); })
+       .catch(err=>{ diag.play = "отклонён: " + (err && err.name); audioReady = false; badge(); });
+    }else{ diag.play = "без промиса"; verifyPlaying(beepEl); }
+    setTimeout(()=>{ try{ beepEl.pause(); beepEl.currentTime = 0; }catch(e){} }, 1200);
+  }else{ diag.play = "нет элемента <audio>"; }
+
+  setTimeout(waTone, 60);   // подтверждение через Web Audio
+
+  if("Notification" in window && Notification.permission === "default"){
+    try{ Notification.requestPermission(); }catch(e){}
+  }
+  requestWakeLock();
+  setTimeout(badge, 1600);
+}
+function badge(){
+  const b = document.getElementById("soundBadge");
+  const wa = !!(ctx && ctx.state === "running");
+  const ok = audioReady || wa;
+  b.textContent = ok ? (audioReady ? "Звук вкл" : "Звук: WA") : "Звук выкл";
+  b.className = "iconbtn " + (ok ? "on" : "off");
+  const d = document.getElementById("diagBox");
+  if(d && d.style.display !== "none") d.textContent = diagText();
+}
+function diagText(){
+  let inFrame = "?"; try{ inFrame = (window.self !== window.top) ? "ДА — звук часто блокируют" : "нет"; }catch(e){ inFrame = "ДА (кросс-домен)"; }
+  return [
+    "внутри чужого окна: " + inFrame,
+    "адрес: " + location.protocol + "//" + (location.hostname || "файл"),
+    "AudioContext: " + (ctx ? ctx.state : "не создан"),
+    "blob-звук: " + diag.blob,
+    "data-звук: " + diag.data,
+    "источник: " + (usingData ? "data:" : "blob:"),
+    "play(): " + diag.play,
+    "проверка: " + diag.advance,
+    "вибрация: " + (("vibrate" in navigator) ? "есть" : "нет"),
+    diag.err ? ("ошибка: " + diag.err) : ""
+  ].filter(Boolean).join("\n");
+}
+function startBeeping(){
+  waStart();                                   // Web Audio — всегда, он самый пробивной
+  if(beepEl){
+    try{
+      beepEl.currentTime = 0;
+      const p = beepEl.play();
+      if(p && p.catch) p.catch(()=>{});
+    }catch(e){}
+  }
+}
+function stopBeeping(){
+  try{ if(beepEl){ beepEl.pause(); beepEl.currentTime = 0; } }catch(e){}
+  waStop();
+}
+
+let wakeLock = null;
+async function requestWakeLock(){
+  try{ if("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible"){
+    if(audioReady && keepEl && keepEl.paused) keepEl.play().catch(()=>{});
+    if(ctx && ctx.state === "suspended") ctx.resume().then(badge).catch(()=>{});
+    requestWakeLock(); tick(); badge();
+  }
+});
+
+/* ======================= СТАНЦИИ ======================= */
+const stations = [];
+for(const n of TABLES) stations.push({ id:"t"+n, label:"Стол "+n, zone:"tables" });
+for(const n of CABINS) stations.push({ id:"c"+n, label:"Кабина "+n, zone:"cabins" });
+
+const els = {};
+function render(){
+  for(const st of stations){
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      '<div class="fuel"></div>' +
+      '<div class="name">'+st.label+'</div>' +
+      '<div class="time mono">--:--</div>' +
+      '<div class="state">свободен</div>' +
+      '<button class="btn primary act">Готово</button>' +
+      '<div class="row" style="display:none"><button class="btn add">+5 мин</button><button class="btn stop">Стоп</button></div>';
+    document.getElementById(st.zone).appendChild(card);
+    els[st.id] = { card, fuel:card.querySelector(".fuel"), time:card.querySelector(".time"),
+      state:card.querySelector(".state"), act:card.querySelector(".act"),
+      row:card.querySelector(".row"), add:card.querySelector(".add"), stop:card.querySelector(".stop") };
+    els[st.id].act.addEventListener("click", ()=> onAct(st));
+    els[st.id].add.addEventListener("click", ()=>{ const t=store.timers[st.id]; if(t){ t.endsAt+=5*60000; t.muted=false; save(); tick(); }});
+    els[st.id].stop.addEventListener("click", ()=>{ delete store.timers[st.id]; save(); tick(); });
+  }
+}
+function onAct(st){
+  store.timers[st.id] = { endsAt: Date.now() + store.cfg.durMin*60000, muted:false };
+  save();
+  if(audioReady && keepEl && keepEl.paused) keepEl.play().catch(()=>{});
+  tick();
+}
+function fmt(ms){
+  if(ms<0) ms=0;
+  const s=Math.round(ms/1000);
+  return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+}
+
+/* ======================= ТИК ======================= */
+let ringingIds = [];
+function tick(){
+  const now = Date.now(), pre = store.cfg.preSec*1000, dur = store.cfg.durMin*60000;
+  let active = 0; const ringing = [], rIds = [];
+
+  for(const st of stations){
+    const e = els[st.id], t = store.timers[st.id];
+    e.card.classList.remove("running","warm","hot","done");
+    if(!t){
+      e.time.textContent = "--:--"; e.state.textContent = "свободен";
+      e.fuel.style.height = "0%"; e.act.textContent = "Готово";
+      e.act.className = "btn primary act"; e.row.style.display = "none";
+      continue;
+    }
+    active++;
+    const left = t.endsAt - now;
+    e.fuel.style.height = (Math.min(1,Math.max(0,1-left/dur))*100).toFixed(1)+"%";
+    e.row.style.display = "flex";
+
+    if(left <= 0){
+      e.time.textContent = "+"+fmt(-left);
+      e.card.classList.add("done");
+      e.state.textContent = "просрочено";
+      e.act.textContent = "Заменил"; e.act.className = "btn alarm act";
+      if(!t.muted){ ringing.push(st.label); rIds.push(st.id); }
+    }else{
+      e.time.textContent = fmt(left);
+      if(left <= pre){
+        e.card.classList.add("hot"); e.state.textContent = "меняй уголь";
+        e.act.textContent = "Заменил"; e.act.className = "btn alarm act";
+        if(!t.muted){ ringing.push(st.label); rIds.push(st.id); }
+      }else if(left <= 5*60000){
+        e.card.classList.add("warm"); e.state.textContent = "скоро";
+        e.act.textContent = "Заменил"; e.act.className = "btn act";
+      }else{
+        e.card.classList.add("running"); e.state.textContent = "горит";
+        e.act.textContent = "Заменил"; e.act.className = "btn act";
+      }
+    }
+  }
+  document.getElementById("activeCount").textContent = active;
+  ringingIds = rIds;
+  updateAlarm(ringing);
+}
+
+const alertBox = document.getElementById("alert"), alertText = document.getElementById("alertText");
+let notified = "";
+function updateAlarm(list){
+  const key = list.join("|");
+  if(list.length){
+    alertText.textContent = list.length===1 ? list[0]+" — меняй уголь" : "Меняй уголь: "+list.join(", ");
+    if(!alertBox.classList.contains("on")){ alertBox.classList.add("on"); startBeeping(); }
+    if(key !== notified){
+      notified = key;
+      try{ if(navigator.vibrate) navigator.vibrate([300,150,300,150,300]); }catch(e){}
+      try{
+        if("Notification" in window && Notification.permission==="granted" && document.hidden)
+          new Notification("Меняй уголь", { body:list.join(", "), tag:"coal", renotify:true });
+      }catch(e){}
+    }
+  }else{
+    if(alertBox.classList.contains("on")){ alertBox.classList.remove("on"); stopBeeping(); }
+    notified = "";
+  }
+}
+document.getElementById("alertOff").addEventListener("click", ()=>{
+  const now = Date.now(), pre = store.cfg.preSec*1000;
+  for(const id in store.timers) if(store.timers[id].endsAt - now <= pre) store.timers[id].muted = true;
+  save(); stopBeeping(); tick();
+});
+document.getElementById("alertJump").addEventListener("click", ()=>{
+  const id = ringingIds[0]; if(!id) return;
+  const c = els[id].card;
+  c.scrollIntoView({behavior:"smooth", block:"center"});
+  c.classList.add("jump"); setTimeout(()=>c.classList.remove("jump"), 1600);
+});
+
+/* ======================= НАСТРОЙКИ ======================= */
+const durInput=document.getElementById("durMin"), preInput=document.getElementById("preSec"), pick=document.getElementById("soundPick");
+document.getElementById("gear").addEventListener("click", ()=> document.getElementById("settings").classList.toggle("open"));
+durInput.addEventListener("change", ()=>{ const v=parseInt(durInput.value,10);
+  if(v>0&&v<=120){ store.cfg.durMin=v; save(); } else durInput.value=store.cfg.durMin; tick(); });
+preInput.addEventListener("change", ()=>{ const v=parseInt(preInput.value,10);
+  if(v>=5&&v<=300){ store.cfg.preSec=v; save(); } else preInput.value=store.cfg.preSec; tick(); });
+pick.addEventListener("change", ()=>{
+  store.cfg.sound = pick.value; save(); applySound();
+  startBeeping(); setTimeout(stopBeeping, 2100);
+});
+document.getElementById("soundBadge").addEventListener("click", ()=>{ unlockAudio(); startBeeping(); setTimeout(stopBeeping,1200); });
+document.getElementById("diagBtn").addEventListener("click", ()=>{
+  const d = document.getElementById("diagBox");
+  const open = d.style.display === "block";
+  d.style.display = open ? "none" : "block";
+  if(!open) d.textContent = diagText();
+});
+document.getElementById("testSound").addEventListener("click", ()=>{ startBeeping(); setTimeout(stopBeeping,2100); });
+document.getElementById("stopAll").addEventListener("click", ()=>{
+  if(confirm("Сбросить все таймеры?")){ store.timers={}; save(); stopBeeping(); tick(); } });
+
+/* ======================= СТАРТ ======================= */
+load();
+durInput.value = store.cfg.durMin;
+preInput.value = store.cfg.preSec;
+pick.value = store.cfg.sound;
+applySound();
+render(); tick(); badge();
+try{ if(window.self !== window.top) document.getElementById("frameWarn").classList.add("show"); }
+catch(e){ document.getElementById("frameWarn").classList.add("show"); }
+setInterval(tick, 500);
+
+document.getElementById("unlockBtn").addEventListener("click", ()=>{
+  unlockAudio();
+  document.getElementById("unlock").classList.add("hidden");
+});
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
