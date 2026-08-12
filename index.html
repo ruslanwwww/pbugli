@@ -227,6 +227,7 @@ footer{color:#4A545E;font-size:11px;text-align:center;margin-top:26px;line-heigh
   </label>
   <button class="ghost" id="testSound">Проверить звук</button>
   <button class="ghost" id="stopAll">Сбросить все</button>
+  <button class="ghost" id="notifBtn">Включить уведомления</button>
   <button class="ghost" id="diagBtn">Диагностика звука</button>
   <pre id="diagBox"></pre>
   <div id="syncBox">
@@ -496,6 +497,8 @@ function diagText(){
     "play(): " + diag.play,
     "проверка: " + diag.advance,
     "вибрация: " + (("vibrate" in navigator) ? "есть" : "нет"),
+    "уведомления: " + (("Notification" in window) ? Notification.permission : "не поддерживаются"),
+    "service worker: " + (swReg ? "готов" : "не готов"),
     diag.err ? ("ошибка: " + diag.err) : ""
   ].filter(Boolean).join("\n");
 }
@@ -809,6 +812,39 @@ function tick(){
   updateAlarm(ringing);
 }
 
+let swReg = null;
+/* Chrome на Android запрещает new Notification() — там уведомление
+   умеет показывать только service worker. Пробуем сначала его. */
+function showNotif(title, body){
+  if(!("Notification" in window) || Notification.permission !== "granted") return;
+  const opts = { body, tag:"coal", renotify:true, requireInteraction:true,
+                 icon:"icon-192.png", badge:"icon-192.png", vibrate:[300,150,300] };
+  try{
+    if(swReg && swReg.showNotification){ swReg.showNotification(title, opts); return; }
+  }catch(e){}
+  try{ new Notification(title, opts); }catch(e){}
+}
+function notifBadge(){
+  const b = document.getElementById("notifBtn");
+  if(!b) return;
+  const st = ("Notification" in window) ? Notification.permission : "нет поддержки";
+  b.textContent = st === "granted" ? "Уведомления вкл"
+                : st === "denied"  ? "Уведомления ЗАПРЕЩЕНЫ"
+                : "Включить уведомления";
+  b.style.borderColor = st === "granted" ? "#2E5A4A" : (st === "denied" ? "var(--hot)" : "");
+  b.style.color = st === "granted" ? "#5FD0A6" : (st === "denied" ? "var(--hot)" : "");
+}
+async function askNotif(){
+  if(!("Notification" in window)){ alert("Этот браузер не умеет уведомления. Открой сайт в Chrome."); return; }
+  if(Notification.permission === "denied"){
+    alert("Уведомления запрещены в настройках браузера.\n\nChrome: замочек слева в адресной строке → Настройки сайтов → Уведомления → Разрешить.\nПотом перезапусти приложение.");
+    return;
+  }
+  try{ await Notification.requestPermission(); }catch(e){}
+  notifBadge();
+  if(Notification.permission === "granted") showNotif("Проверка", "Так будет выглядеть сигнал о замене угля");
+}
+
 const alertBox = document.getElementById("alert"), alertText = document.getElementById("alertText");
 let notified = "";
 function updateAlarm(list){
@@ -820,10 +856,7 @@ function updateAlarm(list){
       notified = key;
       if(store.cfg.watch) return;
       try{ if(navigator.vibrate) navigator.vibrate([300,150,300,150,300]); }catch(e){}
-      try{
-        if("Notification" in window && Notification.permission==="granted" && document.hidden)
-          new Notification("Меняй уголь", { body:list.join(", "), tag:"coal", renotify:true });
-      }catch(e){}
+      showNotif("Меняй уголь", list.join(", "));
     }
   }else{
     if(alertBox.classList.contains("on")){ alertBox.classList.remove("on"); stopBeeping(); }
@@ -860,6 +893,7 @@ document.getElementById("watchMode").addEventListener("change", e=>{
   store.cfg.watch = e.target.checked; save();
   if(store.cfg.watch) stopBeeping();
 });
+document.getElementById("notifBtn").addEventListener("click", askNotif);
 document.getElementById("diagBtn").addEventListener("click", ()=>{
   const d = document.getElementById("diagBox");
   const open = d.style.display === "block";
@@ -878,7 +912,7 @@ durInput.value = store.cfg.durMin;
 preInput.value = store.cfg.preSec;
 pick.value = store.cfg.sound;
 applySound();
-render(); renderPlan(); tick(); badge();
+render(); renderPlan(); tick(); badge(); notifBadge();
 document.getElementById("watchMode").checked = !!store.cfg.watch;
 document.getElementById("barCode").value = store.cfg.bar || "";
 document.getElementById("fbCfg").value = store.cfg.fb || "";
@@ -892,7 +926,12 @@ document.getElementById("unlockBtn").addEventListener("click", ()=>{
   unlockAudio();
   document.getElementById("unlock").classList.add("hidden");
 });
-if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js")
+    .then(r=>{ swReg = r; return navigator.serviceWorker.ready; })
+    .then(r=>{ swReg = r || swReg; notifBadge(); })
+    .catch(()=>{});
+}
 </script>
 </body>
 </html>
