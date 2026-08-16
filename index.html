@@ -64,6 +64,8 @@ header{
 #settings input{width:64px;text-align:center}
 .ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
 .ghost:active{color:var(--text)}
+.ghost.danger{border-color:#5A2418;color:#E8907C}
+.ghost.danger:active{background:#2A140F;color:#fff}
 
 h2{
   font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
@@ -317,6 +319,13 @@ footer{color:#4A545E;font-size:11px;text-align:center;margin-top:26px;line-heigh
       <option value="all">всё</option>
     </select>
     <button class="ghost" id="histCsv">Выгрузить в CSV</button>
+    <select id="clrWhat">
+      <option value="1">старше дня</option>
+      <option value="7">старше недели</option>
+      <option value="30">старше месяца</option>
+      <option value="all">всю историю</option>
+    </select>
+    <button class="ghost danger" id="histClr">Очистить</button>
   </div>
   <div id="histStats"></div>
   <div id="histList"></div>
@@ -756,6 +765,15 @@ function syncHist(rec){
   if(!fb.db || !fb.api) return;
   try{ fb.api.set(fb.api.ref(fb.db, fb.ref + "/hist/" + rec.id), rec); }catch(e){}
 }
+function syncHistDelete(ids, all){
+  if(!fb.db || !fb.api) return;
+  try{
+    if(all){ fb.api.set(fb.api.ref(fb.db, fb.ref + "/hist"), null); return; }
+    const patch = {};
+    for(const id of ids) patch[id] = null;
+    fb.api.update(fb.api.ref(fb.db, fb.ref + "/hist"), patch);
+  }catch(e){}
+}
 function syncLayout(){
   if(!fb.db || !fb.api) return;
   try{
@@ -787,7 +805,7 @@ document.getElementById("syncOffBtn").addEventListener("click", ()=>{
 /* Одна запись: { id, s: станция, t: время, a: действие, l: опоздание в сек }
    a: "start" — кальян отдан, "swap" — уголь заменён, "stop" — точка закрыта. */
 const HIST_MAX = 800;                 // сколько записей держим на телефоне
-const HIST_DAYS = 30;                 // и за какой срок
+const HIST_DAYS = 90;                 // и за какой срок (чтобы «старше месяца» имело смысл)
 
 function logEvent(stId, action, lateMs){
   const rec = {
@@ -867,6 +885,27 @@ function renderHist(){
   }
   box.innerHTML = html;
 }
+/* Очистка. Записи удаляются и из общей базы, иначе при следующей
+   синхронизации они вернулись бы с других телефонов. */
+function clearHist(days){
+  const all = days === "all";
+  const edge = all ? Infinity : Date.now() - (+days) * 86400000;
+  const doomed = store.hist.filter(r => all || r.t < edge);
+  if(!doomed.length){ alert("Нечего удалять — под это условие ничего не попадает."); return; }
+
+  const what = all ? "ВСЮ историю целиком" : "записи старше " +
+    ({1:"суток", 7:"недели", 30:"месяца"}[days] || days + " дней");
+  if(!confirm("Удалить " + what + "?\nЗаписей: " + doomed.length +
+              "\n\nОни исчезнут у всех, кто подключён к общей доске. Отменить нельзя.")) return;
+
+  store.hist = all ? [] : store.hist.filter(r => r.t >= edge);
+  save();
+  syncHistDelete(doomed.map(r => r.id), all);
+  renderHist();
+}
+document.getElementById("histClr").addEventListener("click", ()=>{
+  clearHist(document.getElementById("clrWhat").value);
+});
 document.getElementById("histWho").addEventListener("change", renderHist);
 document.getElementById("histWhen").addEventListener("change", renderHist);
 document.getElementById("histCsv").addEventListener("click", ()=>{
